@@ -1,18 +1,18 @@
 #include <Arduino.h>
-int pin1 = 13; // camera trigger
-int pin2 = 12; // LED
+int camera_pin = 13; // camera trigger
+int led_pin = 12; // LED
 
 // setting PWM properties
 const int ledChannel = 0;
-const int resolution = 8;
+const int resolution = 4;
 
 void setup()
 {
     Serial.begin(115200);
-    pinMode(pin1, OUTPUT);
-    pinMode(pin2, OUTPUT);
-    digitalWrite(pin1, LOW);
-    digitalWrite(pin2, LOW);
+    pinMode(camera_pin, OUTPUT);
+    pinMode(led_pin, OUTPUT);
+    digitalWrite(camera_pin, LOW);
+    digitalWrite(led_pin, LOW);
 
     Serial.println("ready");
 }
@@ -23,13 +23,13 @@ void enable_pwm(double freq, int duty)
     Serial.print("Freq out: ");
     Serial.print(freq_out);
     Serial.println();
-    ledcAttachPin(pin2, ledChannel);
+    ledcAttachPin(led_pin, ledChannel);
     ledcWrite(ledChannel, duty);
 }
 
 void disable_pwm()
 {
-    ledcDetachPin(pin2);
+    ledcDetachPin(led_pin);
 }
 
 String line;
@@ -59,11 +59,28 @@ void process(String s)
         {
             String arg = s.substring(1);
             disable_pwm();
-            digitalWrite(pin2, HIGH);
+            digitalWrite(led_pin, HIGH);
             delay(arg.toInt());
-            digitalWrite(pin2, LOW);
+            digitalWrite(led_pin, LOW);
             Serial.print("Pulse ");
             Serial.print(arg.toInt());
+            Serial.println();
+        }
+        if (cmd == 'L')
+        {
+            int arg = s.substring(1).toInt();
+            disable_pwm();
+            if (arg == 0)
+            {
+                digitalWrite(led_pin, LOW);
+            }
+            else if (arg == 1)
+            {
+                digitalWrite(led_pin, HIGH);
+            }
+
+            Serial.print("Light state ");
+            Serial.print(arg);
             Serial.println();
         }
         if (cmd == 'C')
@@ -71,11 +88,11 @@ void process(String s)
             int arg = s.substring(1).toInt();
             if (arg == 0)
             {
-                digitalWrite(pin1, HIGH);
+                digitalWrite(camera_pin, LOW);
             }
             else if (arg == 1)
             {
-                digitalWrite(pin1, LOW);
+                digitalWrite(camera_pin, HIGH);
             }
 
             Serial.print("Camera state ");
@@ -85,12 +102,12 @@ void process(String s)
         if (cmd == 'Q')
         {
             int arg = s.substring(1).toInt();
-            digitalWrite(pin1, HIGH);
+            digitalWrite(camera_pin, HIGH);
             if (arg < 1000)
                 delayMicroseconds(arg);
             else
                 delay(arg / 1000);
-            digitalWrite(pin1, LOW);
+            digitalWrite(camera_pin, LOW);
 
             Serial.print("Camera strobe ");
             Serial.print(arg);
@@ -103,19 +120,19 @@ void process(String s)
             int light = arg.substring(0, idx).toInt();
             int camera = arg.substring(idx).toInt();
 
-            digitalWrite(pin2, LOW); // light off
-            digitalWrite(pin1, LOW); // camera off
+            digitalWrite(led_pin, LOW); // light off
+            digitalWrite(camera_pin, LOW); // camera off
             
-            digitalWrite(pin1, HIGH); // camera on
+            digitalWrite(camera_pin, HIGH); // camera on
             delayMicroseconds(20); // Minimum trigger delay
-            digitalWrite(pin2, HIGH); // light on
+            digitalWrite(led_pin, HIGH); // light on
             delayMicroseconds(light);
 
 
 
-            digitalWrite(pin2, LOW); // light off
+            digitalWrite(led_pin, LOW); // light off
             delayMicroseconds(camera);
-            digitalWrite(pin1, LOW); // camera off
+            digitalWrite(camera_pin, LOW); // camera off
             //delay(1);
 
             Serial.print("Sync flash and camera ");
