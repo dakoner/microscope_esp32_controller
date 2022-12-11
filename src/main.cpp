@@ -119,17 +119,15 @@ void process(String s)
             int idx = arg.indexOf(' ');
             int light = arg.substring(0, idx).toInt();
             int camera = arg.substring(idx).toInt();
-
+            disable_pwm();
+            delay(1);
             digitalWrite(led_pin, LOW); // light off
             digitalWrite(camera_pin, LOW); // camera off
-            
+            delay(1);
             digitalWrite(camera_pin, HIGH); // camera on
             delayMicroseconds(20); // Minimum trigger delay
             digitalWrite(led_pin, HIGH); // light on
             delayMicroseconds(light);
-
-
-
             digitalWrite(led_pin, LOW); // light off
             delayMicroseconds(camera);
             digitalWrite(camera_pin, LOW); // camera off
