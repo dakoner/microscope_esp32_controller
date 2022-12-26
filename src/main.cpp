@@ -1,69 +1,64 @@
-#include <driver/rmt.h>
+#include "esp32-hal.h"
+// #include <driver/rmt.h>
 #include <Arduino.h>
 int camera_trigger_pin = 12; // camera trigger
-int camera_strobe_pin = 14; // camera strobe
-int led_pin = LED_BUILTIN; // LED
-gpio_num_t led_pin_gpio = GPIO_NUM_2;
+int camera_strobe_pin = 14;  // camera strobe
+int led_pin = 23;            // LED
+gpio_num_t led_pin_gpio = GPIO_NUM_23;
 
 // setting PWM properties
 const int ledChannel = 0;
 const int resolution = 4;
 
-
-
-hw_timer_t * timer = NULL;
+hw_timer_t *timer = NULL;
 
 volatile uint32_t isrTriggerCounter = 0;
 volatile uint32_t lastTriggerIsrAt = 0;
 volatile SemaphoreHandle_t triggerSemaphore;
 portMUX_TYPE triggerMux = portMUX_INITIALIZER_UNLOCKED;
 
-
 volatile uint32_t isrTimerCounter = 0;
 volatile uint32_t lastTimerIsrAt = 0;
 volatile SemaphoreHandle_t timerSemaphore;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
+rmt_obj_t *rmt_send = NULL;
+rmt_data_t led_data[32];
 
-rmt_config_t config;
-rmt_item32_t items[1];
+// rmt_config_t config;
+// rmt_item32_t items[1];
 
-void rmt_pulse() {
-            
-        rmt_write_items(config.channel, items, 1, 0);
+// void rmt_pulse()
+// {
 
-        // delayMicroseconds(1);
+//     rmt_write_items(config.channel, items, 1, 0);
+// }
 
-        // rmt_driver_uninstall(config.channel); 
-
-
+void ARDUINO_ISR_ATTR onTimer()
+{
+    // Increment the counter and set the time of ISR
+    portENTER_CRITICAL_ISR(&timerMux);
+    isrTimerCounter++;
+    lastTimerIsrAt = micros();
+    portEXIT_CRITICAL_ISR(&timerMux);
+    // Give a semaphore that we can check in the loop
+    xSemaphoreGiveFromISR(timerSemaphore, NULL);
+    digitalWrite(led_pin, LOW);
 }
 
-
-void ARDUINO_ISR_ATTR onTimer(){
-  // Increment the counter and set the time of ISR
-  portENTER_CRITICAL_ISR(&timerMux);
-  isrTimerCounter++;
-  lastTimerIsrAt = micros();
-  portEXIT_CRITICAL_ISR(&timerMux);
-  // Give a semaphore that we can check in the loop
-  xSemaphoreGiveFromISR(timerSemaphore, NULL);
-  digitalWrite(led_pin, LOW);
-}
-
-void ARDUINO_ISR_ATTR camera_trigger_isr() {
+void ARDUINO_ISR_ATTR camera_trigger_isr()
+{
+    rmtWrite(rmt_send, led_data, 32);
     portENTER_CRITICAL_ISR(&triggerMux);
     isrTriggerCounter++;
     lastTriggerIsrAt = micros();
     portEXIT_CRITICAL_ISR(&triggerMux);
     // Give a semaphore that we can check in the loop
     xSemaphoreGiveFromISR(triggerSemaphore, NULL);
-    rmt_pulse();
-    //digitalWrite(led_pin, HIGH);
-    //timerAlarmEnable(timer);
+    // rmt_pulse();
+    //  digitalWrite(led_pin, HIGH);
+    //  timerAlarmEnable(timer);
 }
-
-
 
 void enable_pwm(double freq, int duty)
 {
@@ -80,20 +75,19 @@ void disable_pwm()
     ledcDetachPin(led_pin);
 }
 
+void handleTrigger()
+{
 
-
-
-void handleTrigger() {
-
-    if (xSemaphoreTake(triggerSemaphore, 0) == pdTRUE){
+    if (xSemaphoreTake(triggerSemaphore, 0) == pdTRUE)
+    {
         uint32_t isrCount = 0, isrTime = 0;
         // Read the interrupt count and time
         portENTER_CRITICAL(&triggerMux);
         isrCount = isrTriggerCounter;
         isrTime = lastTriggerIsrAt;
         portEXIT_CRITICAL(&triggerMux);
-        uint32_t dm = micros()-isrTime;
-        
+        uint32_t dm = micros() - isrTime;
+
         Serial.print("Camera triggered at ");
         Serial.print(isrTime);
         Serial.print(" loop latency ");
@@ -102,20 +96,22 @@ void handleTrigger() {
         Serial.print(" total of ");
         Serial.print(isrCount);
         Serial.println();
-    } 
+    }
 }
 
-void handleTimer() {
+void handleTimer()
+{
 
-    if (xSemaphoreTake(timerSemaphore, 0) == pdTRUE){
+    if (xSemaphoreTake(timerSemaphore, 0) == pdTRUE)
+    {
         uint32_t isrCount = 0, isrTime = 0;
         // Read the interrupt count and time
         portENTER_CRITICAL(&timerMux);
         isrCount = isrTimerCounter;
         isrTime = lastTimerIsrAt;
         portEXIT_CRITICAL(&timerMux);
-        uint32_t dm = micros()-isrTime;
-        
+        uint32_t dm = micros() - isrTime;
+
         Serial.print("Timer triggered at ");
         Serial.print(isrTime);
         Serial.print(" loop latency ");
@@ -130,10 +126,11 @@ void handleTimer() {
 
 void process(String s)
 {
-    Serial.print("Process: ");
-    Serial.println(s);
     if (s.length() > 0)
     {
+        Serial.print("Process: ");
+        Serial.println(s);
+
         char cmd = s[0];
         // Add PWM as alternative to strobe signal
         if (cmd == 'P')
@@ -224,18 +221,18 @@ void process(String s)
             timerAlarmWrite(timer, light, false);
             Serial.print(" with light delay set to ");
             Serial.println(light);
-            //disable_pwm();
-            //digitalWrite(led_pin, LOW); // light off
+            // disable_pwm();
+            // digitalWrite(led_pin, LOW); // light off
             digitalWrite(camera_trigger_pin, LOW); // camera off
-            //delayMicroseconds(0);
+            // delayMicroseconds(0);
             digitalWrite(camera_trigger_pin, HIGH); // camera on
             delayMicroseconds(camera);
             // delayMicroseconds(camera);
-            //digitalWrite(led_pin, HIGH); // light on
+            // digitalWrite(led_pin, HIGH); // light on
             // delayMicroseconds(light);
             // digitalWrite(led_pin, LOW); // light off
             digitalWrite(camera_trigger_pin, LOW); // camera off
-            //delay(1);
+            // delay(1);
 
             Serial.print("Sync flash and camera ");
             Serial.print(light);
@@ -244,17 +241,32 @@ void process(String s)
             Serial.print(" ");
             Serial.print(micros());
             Serial.println();
-        
         }
-        if (cmd == 'Z') {
-                     }
-   }
-}
+        if (cmd == 'Z')
+        {
+            // rmt_pulse();
+        }
+        if (cmd == 'A')
+        {
 
+            if ((rmt_send = rmtInit(led_pin_gpio, RMT_TX_MODE, RMT_MEM_64)) == NULL)
+            {
+                Serial.println("init sender failed\n");
+            }
+
+            float realTick = rmtSetTick(rmt_send, 3200);
+            Serial.printf("real tick set to: %fns\n", realTick);
+
+            rmtWrite(rmt_send, led_data, 32);
+            rmtDeinit(rmt_send);
+        }
+    }
+}
 
 String line;
 
-void handleSerial() {
+void handleSerial()
+{
 
     while (Serial.available())
     {
@@ -262,7 +274,6 @@ void handleSerial() {
         Serial.print((char)c);
         if (c == '\n' || c == '\r')
         {
-
             process(line);
             line = "";
         }
@@ -273,60 +284,45 @@ void handleSerial() {
     }
 }
 
-
-
 void setup()
 {
     Serial.begin(115200);
     pinMode(camera_trigger_pin, OUTPUT);
     digitalWrite(camera_trigger_pin, LOW);
     pinMode(camera_strobe_pin, INPUT_PULLUP);
-	attachInterrupt(camera_strobe_pin, camera_trigger_isr, FALLING);
+    attachInterrupt(camera_strobe_pin, camera_trigger_isr, FALLING);
 
     pinMode(led_pin, OUTPUT);
     digitalWrite(led_pin, LOW);
-
 
     // Create semaphore to inform us when the timer has fired
     triggerSemaphore = xSemaphoreCreateBinary();
     timerSemaphore = xSemaphoreCreateBinary();
 
-
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
 
+    led_data[0].level0 = 1;
+    led_data[0].duration0 = 32767;
+    led_data[0].level1 = 0;
+    led_data[0].duration1 = 1;
 
-        
-        // put your setup code here, to run once:
-        config.rmt_mode = RMT_MODE_TX;
-        config.channel = RMT_CHANNEL_0;
-        config.gpio_num = led_pin_gpio;
-        config.mem_block_num = 1;
-        config.tx_config.loop_en = 0;
-        config.tx_config.carrier_en = 0;
-        config.tx_config.idle_output_en = 1;
-        config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-        config.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
-        config.clk_div = 80; // 80MHx / 4 = 20MHz 0r 50nS per count
-        
-        rmt_config(&config);
-        rmt_driver_install(config.channel, 0, 0);  //  rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
-        
-        items[0].duration0 = 1;
-        items[0].level0 = 1;
-        items[0].duration1 = 0;
-        items[0].level1 = 0;  
+    
+    if ((rmt_send = rmtInit(led_pin_gpio, RMT_TX_MODE, RMT_MEM_64)) == NULL)
+    {
+        Serial.println("init sender failed\n");
+    }
 
-
+    float realTick = rmtSetTick(rmt_send, 3200);
+    Serial.printf("real tick set to: %fns\n", realTick);
+    
     Serial.println("ready");
 }
 
-
 void loop()
 {
-  
+
     handleTrigger();
     handleTimer();
     handleSerial();
-
 }
