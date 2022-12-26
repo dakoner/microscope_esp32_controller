@@ -1,7 +1,9 @@
+#include <driver/rmt.h>
 #include <Arduino.h>
-int camera_trigger_pin = 13; // camera trigger
+int camera_trigger_pin = 12; // camera trigger
 int camera_strobe_pin = 14; // camera strobe
-int led_pin = 12; // LED
+int led_pin = LED_BUILTIN; // LED
+gpio_num_t led_pin_gpio = GPIO_NUM_2;
 
 // setting PWM properties
 const int ledChannel = 0;
@@ -23,6 +25,20 @@ volatile SemaphoreHandle_t timerSemaphore;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 
+rmt_config_t config;
+rmt_item32_t items[1];
+
+void rmt_pulse() {
+            
+        rmt_write_items(config.channel, items, 1, 0);
+
+        // delayMicroseconds(1);
+
+        // rmt_driver_uninstall(config.channel); 
+
+
+}
+
 
 void ARDUINO_ISR_ATTR onTimer(){
   // Increment the counter and set the time of ISR
@@ -32,8 +48,6 @@ void ARDUINO_ISR_ATTR onTimer(){
   portEXIT_CRITICAL_ISR(&timerMux);
   // Give a semaphore that we can check in the loop
   xSemaphoreGiveFromISR(timerSemaphore, NULL);
-  digitalWrite(led_pin, HIGH);
-  delayMicroseconds(10);
   digitalWrite(led_pin, LOW);
 }
 
@@ -44,10 +58,8 @@ void ARDUINO_ISR_ATTR camera_trigger_isr() {
     portEXIT_CRITICAL_ISR(&triggerMux);
     // Give a semaphore that we can check in the loop
     xSemaphoreGiveFromISR(triggerSemaphore, NULL);
-    digitalWrite(led_pin, HIGH);
-    delayMicroseconds(1000);
-    digitalWrite(led_pin, LOW);
-    //digitalWrite(camera_trigger_pin, LOW);
+    rmt_pulse();
+    //digitalWrite(led_pin, HIGH);
     //timerAlarmEnable(timer);
 }
 
@@ -67,6 +79,7 @@ void disable_pwm()
 {
     ledcDetachPin(led_pin);
 }
+
 
 
 
@@ -115,7 +128,6 @@ void handleTimer() {
     }
 }
 
-
 void process(String s)
 {
     Serial.print("Process: ");
@@ -140,13 +152,20 @@ void process(String s)
         }
         if (cmd == 'S')
         {
-            String arg = s.substring(1);
+            int arg = s.substring(1).toInt();
             disable_pwm();
             digitalWrite(led_pin, HIGH);
-            delay(arg.toInt());
+            digitalWrite(camera_trigger_pin, HIGH);
+            digitalWrite(camera_strobe_pin, HIGH);
+            if (arg < 1000)
+                delayMicroseconds(arg);
+            else
+                delay(arg / 1000);
             digitalWrite(led_pin, LOW);
+            digitalWrite(camera_trigger_pin, LOW);
+            digitalWrite(camera_strobe_pin, LOW);
             Serial.print("Pulse ");
-            Serial.print(arg.toInt());
+            Serial.print(arg);
             Serial.println();
         }
         if (cmd == 'L')
@@ -212,10 +231,10 @@ void process(String s)
             digitalWrite(camera_trigger_pin, HIGH); // camera on
             delayMicroseconds(camera);
             // delayMicroseconds(camera);
-            digitalWrite(led_pin, HIGH); // light on
+            //digitalWrite(led_pin, HIGH); // light on
             // delayMicroseconds(light);
             // digitalWrite(led_pin, LOW); // light off
-            //digitalWrite(camera_trigger_pin, LOW); // camera off
+            digitalWrite(camera_trigger_pin, LOW); // camera off
             //delay(1);
 
             Serial.print("Sync flash and camera ");
@@ -225,9 +244,14 @@ void process(String s)
             Serial.print(" ");
             Serial.print(micros());
             Serial.println();
+        
         }
-    }
+        if (cmd == 'Z') {
+                     }
+   }
 }
+
+
 String line;
 
 void handleSerial() {
@@ -271,12 +295,36 @@ void setup()
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
 
+
+        
+        // put your setup code here, to run once:
+        config.rmt_mode = RMT_MODE_TX;
+        config.channel = RMT_CHANNEL_0;
+        config.gpio_num = led_pin_gpio;
+        config.mem_block_num = 1;
+        config.tx_config.loop_en = 0;
+        config.tx_config.carrier_en = 0;
+        config.tx_config.idle_output_en = 1;
+        config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+        config.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
+        config.clk_div = 80; // 80MHx / 4 = 20MHz 0r 50nS per count
+        
+        rmt_config(&config);
+        rmt_driver_install(config.channel, 0, 0);  //  rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
+        
+        items[0].duration0 = 1;
+        items[0].level0 = 1;
+        items[0].duration1 = 0;
+        items[0].level1 = 0;  
+
+
     Serial.println("ready");
 }
 
 
 void loop()
 {
+  
     handleTrigger();
     handleTimer();
     handleSerial();
